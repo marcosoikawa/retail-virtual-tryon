@@ -1,0 +1,33 @@
+# Segredos e configuracao local
+.env
+.env.*
+!.env.example
+
+# Logos e customizacoes
+static/img/logo.*
+!static/img/README.md
+
+# Artefatos gerados
+outputs/*
+videos/*
+!outputs/.gitkeep
+!videos/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Editores / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

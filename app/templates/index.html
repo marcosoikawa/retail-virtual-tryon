@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Provador virtual com IA: gere a foto e o vídeo do look a partir de uma foto de corpo inteiro e das peças de roupa.">
+  <title>{{ brand_name }} · Provador Virtual</title>
+  <link rel="icon" href="{{ logo_url or '/static/img/logo.svg' }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/static/css/styles.css?v={{ version }}">
+  <style>:root { --accent: {{ brand_accent }}; }</style>
+</head>
+<body
+  data-max-garments="{{ max_garments }}"
+  data-max-upload-mb="{{ max_upload_mb }}"
+  data-default-duration="{{ default_duration }}"
+  data-version="{{ version }}"
+  data-view="app">
+
+  <a class="skip-link" href="#workspace">Ir para o conteúdo</a>
+
+  <header class="site-header">
+    <div class="site-header__inner">
+      <div class="brand">
+        {% if logo_url %}
+          <img class="brand__logo" src="{{ logo_url }}" alt="{{ brand_name }}" height="40">
+        {% else %}
+          <span class="brand__wordmark" aria-hidden="true">{{ brand_name[:1]|upper }}</span>
+          <span class="brand__name">{{ brand_name }}</span>
+        {% endif %}
+      </div>
+
+      <nav class="topnav" id="topnav" role="tablist" aria-label="Seções">
+        <button class="topnav__tab is-active" id="navApp" role="tab" type="button"
+                aria-selected="true" aria-controls="workspace">Provador Virtual</button>
+        <button class="topnav__tab" id="navDashboard" role="tab" type="button"
+          aria-selected="false" aria-controls="dashboard">Resultados</button>
+      </nav>
+
+      <button class="icon-button" id="themeToggle" type="button" aria-label="Alternar tema claro e escuro">
+        <svg class="icon icon--sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.2 12H1.6M22.4 12h-2.6M6.5 6.5 4.7 4.7M19.3 19.3l-1.8-1.8M17.5 6.5l1.8-1.8M4.7 19.3l1.8-1.8"/></svg>
+        <svg class="icon icon--moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1 class="hero__title">Valide o look antes de <em>produzir a peça</em></h1>
+      <p class="hero__subtitle">Envie a imagem de referência e as peças para gerar uma composição visual e um vídeo de apresentação.</p>
+    </section>
+
+    <div class="workspace" id="workspace">
+      <!-- ------------------------------ ENTRADAS ------------------------------ -->
+      <section class="column column--inputs" aria-labelledby="inputsTitle">
+        <h2 class="sr-only" id="inputsTitle">Entradas</h2>
+
+        <article class="card">
+          <header class="card__head">
+            <h3 class="card__title">1 · Imagem de referência</h3>
+            <p class="card__hint">JPG, PNG ou WEBP até {{ max_upload_mb }} MB</p>
+          </header>
+
+          <div class="dropzone dropzone--person" id="personDropzone" tabindex="0" role="button"
+               aria-label="Selecionar foto de corpo inteiro. Também aceita arrastar e soltar ou colar.">
+            <input class="sr-only" type="file" id="personInput" accept="image/jpeg,image/png,image/webp" aria-label="Foto de corpo inteiro">
+            <div class="dropzone__empty" id="personEmpty">
+              <svg class="dropzone__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15"/></svg>
+              <p class="dropzone__label">Selecione, arraste ou cole a imagem (Ctrl+V)</p>
+              <p class="dropzone__sub">Utilize uma imagem de corpo inteiro, com iluminação adequada e fundo simples</p>
+            </div>
+            <div class="dropzone__preview" id="personPreview" hidden>
+              <img id="personImage" alt="Pré-visualização da foto enviada">
+              <button class="chip-remove" id="personRemove" type="button" aria-label="Remover foto de corpo inteiro">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <header class="card__head">
+            <h3 class="card__title">2 · Itens do look</h3>
+            <p class="card__hint"><span id="garmentCount">0</span>/{{ max_garments }}</p>
+          </header>
+
+          <div class="dropzone dropzone--garments" id="garmentDropzone" tabindex="0" role="button"
+               aria-label="Selecionar peças de roupa. Também aceita arrastar e soltar.">
+            <input class="sr-only" type="file" id="garmentInput" accept="image/jpeg,image/png,image/webp" multiple aria-label="Peças de roupa">
+            <div class="dropzone__empty" id="garmentEmpty">
+              <svg class="dropzone__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5 4.5 6 3 10l3 1.2V20h12v-8.8L21 10l-1.5-4L15 3.5a3 3 0 0 1-6 0Z"/></svg>
+              <p class="dropzone__label">Selecione as peças que compõem o look</p>
+              <p class="dropzone__sub">Até {{ max_garments }} itens, com uma peça por imagem</p>
+            </div>
+          </div>
+          <ul class="thumb-grid" id="garmentGrid" aria-label="Peças selecionadas"></ul>
+        </article>
+
+        <article class="card">
+          <header class="card__head">
+            <h3 class="card__title">3 · Parâmetros da composição</h3>
+          </header>
+
+          <div class="field">
+            <label for="imageModelSelect">Modelo de imagem</label>
+            <select id="imageModelSelect">
+              <option value="gpt-image-2" selected>GPT Image 2</option>
+              <option value="gpt-image-1-mini">GPT-Image-1-mini</option>
+              <option value="FLUX.2-pro">FLUX.2 Pro</option>
+              <option value="FLUX.2-flex">FLUX.2 Flex</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="backgroundSelect">Cenário de fundo</label>
+            <select id="backgroundSelect">
+              <option value="original" selected>Manter o original</option>
+              <option value="studio">Estúdio neutro</option>
+              <option value="urban">Rua urbana</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="styleSelect">Estilo de foto</label>
+            <select id="styleSelect">
+              <option value="ecommerce" selected>E-commerce</option>
+              <option value="lookbook">Lookbook</option>
+              <option value="casual">Casual</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="notesInput">Observações</label>
+            <textarea id="notesInput" rows="3" maxlength="600"
+              placeholder="Exemplo: manter a jaqueta aberta e a barra da calça dobrada."></textarea>
+          </div>
+
+          <button class="button button--primary button--block" id="generateBtn" type="button" disabled>
+            <span class="button__label">Gerar Look</span>
+          </button>
+          <p class="form-note">O prazo estimado para a geração da imagem é de 20 a 60 segundos.</p>
+        </article>
+      </section>
+
+      <!-- ------------------------------ RESULTADO ------------------------------ -->
+      <section class="column column--result" aria-labelledby="resultTitle">
+        <h2 class="sr-only" id="resultTitle">Resultado</h2>
+
+        <article class="card card--result">
+          <div class="tabs" role="tablist" aria-label="Saídas geradas">
+            <button class="tab is-active" id="tabPhoto" role="tab" type="button"
+                    aria-selected="true" aria-controls="panelPhoto">Foto</button>
+            <button class="tab" id="tabVideo" role="tab" type="button"
+                    aria-selected="false" aria-controls="panelVideo" tabindex="-1">Vídeo</button>
+          </div>
+
+          <p class="status-live" id="statusLive" role="status" aria-live="polite"></p>
+
+          <!-- Painel: foto -->
+          <div class="tab-panel" id="panelPhoto" role="tabpanel" aria-labelledby="tabPhoto" tabindex="0">
+            <div class="stage" id="photoStage">
+              <div class="stage__empty" id="photoEmpty">
+                <svg class="stage__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="m4 18 5-5 4 3.5 3-2.5 4 4"/></svg>
+                <p class="stage__title">O resultado será apresentado nesta área</p>
+                <p class="stage__sub">Envie a imagem de referência e os itens do look para iniciar.</p>
+              </div>
+
+              <div class="stage__loading" id="photoLoading" hidden>
+                <div class="skeleton"></div>
+                <div class="progress"><div class="progress__bar" id="photoProgressBar"></div></div>
+                <p class="stage__loading-text" id="photoLoadingText">Preparando as imagens…</p>
+              </div>
+
+              <figure class="stage__result" id="photoResult" hidden>
+                <div class="compare-wrap" id="compareWrap">
+                  <img id="resultImage" alt="Foto gerada da pessoa vestindo as peças enviadas">
+                  <div class="compare" id="compareLayer" hidden>
+                    <img class="compare__before" id="compareBefore" alt="Foto original enviada">
+                    <div class="compare__handle" id="compareHandle" role="slider" tabindex="0"
+                         aria-label="Comparar antes e depois" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+                      <span class="compare__grip" aria-hidden="true"></span>
+                    </div>
+                  </div>
+                </div>
+              </figure>
+            </div>
+
+            <div class="stage__actions" id="photoActions" hidden>
+              <a class="button button--ghost" id="downloadBtn" download>Baixar</a>
+              <button class="button button--ghost" id="compareBtn" type="button" aria-pressed="false">Comparar</button>
+              <button class="button button--ghost" id="regenerateBtn" type="button">Gerar novamente</button>
+            </div>
+          </div>
+
+          <!-- Painel: vídeo -->
+          <div class="tab-panel" id="panelVideo" role="tabpanel" aria-labelledby="tabVideo" tabindex="0" hidden>
+            <div class="video-locked" id="videoLocked">
+              <svg class="stage__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2.5"/><path d="M8.5 10V7a3.5 3.5 0 0 1 7 0v3"/></svg>
+              <p class="stage__title">Gere inicialmente a imagem do look</p>
+              <p class="stage__sub">O vídeo será produzido a partir da imagem aprovada, preservando a continuidade visual.</p>
+            </div>
+
+            <div class="video-block" id="videoBlock" hidden>
+              <fieldset class="field">
+                <legend>Movimento de câmera</legend>
+                <div class="segmented" id="cameraMotion" role="radiogroup" aria-label="Movimento de câmera">
+                  <button class="segmented__item is-active" type="button" role="radio" aria-checked="true" data-value="runway">Passarela</button>
+                  <button class="segmented__item" type="button" role="radio" aria-checked="false" data-value="spin">Giro 360°</button>
+                  <button class="segmented__item" type="button" role="radio" aria-checked="false" data-value="fabric">Detalhe do tecido</button>
+                  <button class="segmented__item" type="button" role="radio" aria-checked="false" data-value="still">Estático</button>
+                </div>
+              </fieldset>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="durationSelect">Duração</label>
+                  <select id="durationSelect">
+                    {% for value in durations %}
+                    <option value="{{ value }}" {% if value == default_duration %}selected{% endif %}>{{ value }} segundos</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="orientationSelect">Orientação</label>
+                  <select id="orientationSelect">
+                    <option value="portrait" selected>Vertical 9:16</option>
+                    <option value="landscape">Horizontal 16:9</option>
+                  </select>
+                </div>
+              </div>
+
+              <button class="button button--secondary button--block" id="generateVideoBtn" type="button">
+                Gerar Vídeo do Look
+              </button>
+              <p class="form-note">O prazo estimado para a geração do vídeo é de 1 a 5 minutos.</p>
+
+              <div class="video-progress" id="videoProgress" hidden>
+                <div class="video-progress__head">
+                  <span class="video-progress__stage" id="videoStageLabel">Enviando</span>
+                  <span class="video-progress__time" id="videoElapsed">00:00</span>
+                </div>
+                <div class="progress"><div class="progress__bar" id="videoProgressBar"></div></div>
+                <ol class="steps" id="videoSteps">
+                  <li data-stage="uploading">Enviando</li>
+                  <li data-stage="queued">Na fila</li>
+                  <li data-stage="rendering">Renderizando</li>
+                  <li data-stage="finalizing">Finalizando</li>
+                </ol>
+                <button class="button button--ghost button--block" id="cancelVideoBtn" type="button">Cancelar</button>
+              </div>
+
+              <div class="video-result" id="videoResult" hidden>
+                <video id="videoPlayer" controls loop playsinline preload="metadata"></video>
+                <div class="stage__actions">
+                  <a class="button button--ghost" id="videoDownloadBtn" download>Baixar MP4</a>
+                  <button class="button button--ghost" id="videoRegenerateBtn" type="button">Gerar novamente</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </article>
+      </section>
+    </div>
+
+    <section class="dashboard" id="dashboard" aria-labelledby="dashboardTitle">
+      <div class="dashboard__head">
+        <div>
+          <span class="dashboard__eyebrow">Piloto Microsoft Foundry</span>
+          <h2 class="dashboard__title" id="dashboardTitle">Resultados e projeção de valor</h2>
+          <p class="dashboard__subtitle">Indicadores observados nesta demonstração e projeções calculadas com premissas editáveis.</p>
+        </div>
+        <div class="dashboard__head-actions">
+          <span class="dashboard__engine">
+            <span class="health-dot" aria-hidden="true"></span>
+            Modelos avaliados · <code>GPT Image / FLUX.2</code>
+          </span>
+          <button class="button button--ghost" id="dashboardRefreshBtn" type="button">Atualizar resultados</button>
+        </div>
+      </div>
+
+      <div class="dashboard-mode segmented" id="dashboardMode" role="radiogroup" aria-label="Formato dos resultados">
+        <button class="segmented__item is-active" type="button" role="radio" aria-checked="true" data-value="execution">Por execução</button>
+        <button class="segmented__item" type="button" role="radio" aria-checked="false" data-value="consolidated">Consolidado</button>
+      </div>
+
+      <section class="execution-results" id="executionResults" aria-labelledby="executionResultsTitle">
+        <div class="dashboard__section-head">
+          <div>
+            <span class="dashboard__section-kicker">Dados observados</span>
+            <h3 id="executionResultsTitle">Resultado por execução</h3>
+          </div>
+          <div class="execution-selection">
+            <span class="dashboard__timestamp" id="executionCount">0 execuções</span>
+            <button class="button button--ghost execution-select-all" id="selectAllExecutions" type="button" aria-pressed="true">Todos</button>
+          </div>
+        </div>
+        <div class="execution-table-wrap">
+          <table class="execution-table">
+            <thead>
+              <tr>
+                <th scope="col"><span class="sr-only">Selecionar</span></th>
+                <th scope="col">Horário</th>
+                <th scope="col">Modelo</th>
+                <th scope="col">Duração</th>
+                <th scope="col">Entrada texto</th>
+                <th scope="col">Entrada imagem</th>
+                <th scope="col">Saída imagem</th>
+                <th scope="col">Ref. MP</th>
+                <th scope="col">Saída MP</th>
+                <th scope="col">Custo</th>
+                <th scope="col">ID</th>
+              </tr>
+            </thead>
+            <tbody id="executionRows">
+              <tr><td colspan="11" class="execution-empty">Nenhuma execução de imagem registrada.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="dashboard__section-head" data-dashboard-panel="consolidated" hidden>
+        <div>
+          <span class="dashboard__section-kicker">Dados observados</span>
+          <h3>Desempenho do piloto</h3>
+        </div>
+        <span class="dashboard__timestamp" id="dashObservedAt">Aguardando telemetria</span>
+      </div>
+
+      <div class="dash-grid dash-grid--executive" id="dashGrid" aria-busy="false" data-dashboard-panel="consolidated" hidden>
+        <article class="dash-card dash-card--accent">
+          <span class="dash-card__label">Custo por resultado útil</span>
+          <strong class="dash-card__value" id="dashCostPer">—</strong>
+          <span class="dash-card__foot">por imagem concluída</span>
+        </article>
+        <article class="dash-card">
+          <span class="dash-card__label">Looks concluídos</span>
+          <strong class="dash-card__value" id="dashLooks">0</strong>
+          <span class="dash-card__foot">resultados disponíveis</span>
+        </article>
+        <article class="dash-card">
+          <span class="dash-card__label">Tempo médio</span>
+          <strong class="dash-card__value" id="dashAvgTime">—</strong>
+          <span class="dash-card__foot">por geração de imagem</span>
+        </article>
+        <article class="dash-card">
+          <span class="dash-card__label">Latência P95</span>
+          <strong class="dash-card__value" id="dashP95Time">—</strong>
+          <span class="dash-card__foot">geração de imagem</span>
+        </article>
+        <article class="dash-card">
+          <span class="dash-card__label">Requisições bem-sucedidas</span>
+          <strong class="dash-card__value dash-card__value--ok" id="dashSuccess">—</strong>
+          <span class="dash-card__foot" id="dashErrors">sem falhas registradas</span>
+        </article>
+      </div>
+
+      <p class="dashboard__summary" id="dashExecutiveSummary" data-dashboard-panel="consolidated" hidden>Gere um look para consolidar os resultados desta demonstração.</p>
+
+      <article class="scale-simulator" aria-labelledby="scaleTitle" data-dashboard-panel="consolidated" hidden>
+        <div class="dashboard__section-head">
+          <div>
+            <span class="dashboard__section-kicker">Cenário de negócio</span>
+            <h3 id="scaleTitle">Projeção de escala</h3>
+          </div>
+          <span class="assumption-badge">Premissas editáveis</span>
+        </div>
+
+        <div class="scale-simulator__layout">
+          <form class="scale-controls" id="scaleControls">
+            <div class="scale-field">
+              <label for="scaleVolume">Volume mensal com IA</label>
+              <input id="scaleVolume" type="text" value="1.125.000" readonly aria-readonly="true">
+            </div>
+            <div class="scale-field">
+              <label for="scalePenetration">Penetração da experiência com IA</label>
+              <select id="scalePenetration">
+                <option value="0.09">0,09%</option>
+                <option value="1.5" selected>1,5%</option>
+                <option value="3">3%</option>
+                <option value="5">5%</option>
+                <option value="10">10%</option>
+              </select>
+            </div>
+            <div class="scale-field">
+              <label for="scaleLooksPerSession">Looks por sessão participante</label>
+              <input id="scaleLooksPerSession" type="number" min="0.1" max="20" step="0.1" value="1.5">
+            </div>
+            <div class="scale-field">
+              <label for="scaleMonthlyLooks">Looks mensais</label>
+              <input id="scaleMonthlyLooks" type="text" value="1.687.500" readonly aria-readonly="true">
+            </div>
+            <label class="scale-toggle" for="scaleCacheEnabled">
+              <span>
+                <strong>Reutilização por cache</strong>
+                <small>Reduz em 20% as novas gerações de imagem.</small>
+              </span>
+              <input id="scaleCacheEnabled" type="checkbox" role="switch" checked>
+            </label>
+            <div class="scale-field">
+              <label for="scaleExchangeRate">Câmbio de referência (R$/US$)</label>
+              <input id="scaleExchangeRate" type="number" min="0.01" max="20" step="0.01" value="5.50">
+            </div>
+            <div class="scale-field">
+              <label for="scaleImageCost">Custo contratual por look (R$)</label>
+              <input id="scaleImageCost" type="number" min="0" step="0.01" placeholder="Telemetria do piloto">
+            </div>
+            <div class="scale-field scale-field--wide">
+              <label for="scaleBaselineCost">Custo de referência por jornada no provedor atual (R$)</label>
+              <input id="scaleBaselineCost" type="number" min="0" step="0.01" placeholder="Informe o baseline validado">
+            </div>
+          </form>
+
+          <div class="scale-results" aria-live="polite">
+            <article class="scale-result scale-result--primary">
+              <span>Custo mensal projetado</span>
+              <strong id="scaleMonthlyCost">—</strong>
+              <small id="scaleCostPerJourney">Aguardando custo unitário</small>
+            </article>
+            <article class="scale-result">
+              <span>Custo anual projetado</span>
+              <strong id="scaleAnnualCost">—</strong>
+              <small>12 meses de operação</small>
+            </article>
+            <article class="scale-result">
+              <span>Jornadas cobertas por mês</span>
+              <strong id="scaleCoverage">0</strong>
+              <small>sessões com a experiência de IA</small>
+            </article>
+            <article class="scale-result">
+              <span>Expansão de cobertura</span>
+              <strong id="scaleAdditionalCoverage">0</strong>
+              <small>jornadas adicionais versus 1,125 milhão de sessões com IA</small>
+            </article>
+            <article class="scale-result scale-result--saving">
+              <span>Economia mensal estimada</span>
+              <strong id="scaleMonthlySavings">—</strong>
+              <small id="scaleSavingsRate">Informe o baseline validado</small>
+            </article>
+            <article class="scale-result">
+              <span>Economia anual estimada</span>
+              <strong id="scaleAnnualSavings">—</strong>
+              <small>comparação com o provedor atual</small>
+            </article>
+            <p class="scale-results__note" id="scaleSourceNote">Os cálculos utilizarão os custos medidos nesta demonstração ou os valores contratuais informados.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="luna-comparison" aria-labelledby="lunaTitle" data-dashboard-panel="consolidated" hidden>
+        <div class="dashboard__section-head">
+          <div>
+            <span class="dashboard__section-kicker">Comparativo de modelo textual</span>
+            <h3 id="lunaTitle">Projeção de escala · GPT-5.6 Luna</h3>
+          </div>
+          <span class="assumption-badge">Short context · Global</span>
+        </div>
+
+        <dl class="luna-rates" aria-label="Tarifas do GPT-5.6 Luna por um milhão de tokens">
+          <div><dt>Entrada</dt><dd>US$ 0,20</dd></div>
+          <div><dt>Entrada em cache</dt><dd>US$ 0,02</dd></div>
+          <div><dt>Escrita no cache</dt><dd>US$ 0,25</dd></div>
+          <div><dt>Saída</dt><dd>US$ 1,20</dd></div>
+        </dl>
+
+        <form class="luna-controls" id="lunaControls">
+          <div class="scale-field">
+            <label for="lunaMonthlySessions">Sessões mensais com IA</label>
+            <input id="lunaMonthlySessions" type="text" value="1.125.000" readonly aria-readonly="true">
+          </div>
+          <div class="scale-field">
+            <label for="lunaInputTokens">Tokens de entrada por sessão</label>
+            <input id="lunaInputTokens" type="number" min="0" step="1000" value="120000">
+          </div>
+          <div class="scale-field">
+            <label for="lunaOutputTokens">Tokens de saída por sessão</label>
+            <input id="lunaOutputTokens" type="number" min="0" step="100" value="0">
+          </div>
+          <div class="scale-field">
+            <label for="lunaCachedShare">Entrada reutilizada do cache (%)</label>
+            <input id="lunaCachedShare" type="number" min="0" max="100" step="1" value="100">
+          </div>
+          <div class="scale-field">
+            <label for="lunaCacheWriteTokens">Tokens gravados no cache por mês</label>
+            <input id="lunaCacheWriteTokens" type="number" min="0" step="1000" value="120000">
+          </div>
+          <div class="scale-field">
+            <label for="lunaCurrentCached">Texto atual por sessão · com cache (R$)</label>
+            <input id="lunaCurrentCached" type="number" min="0" step="0.01" value="0.29">
+          </div>
+          <div class="scale-field">
+            <label for="lunaCurrentUncached">Texto atual por sessão · sem cache (R$)</label>
+            <input id="lunaCurrentUncached" type="number" min="0" step="0.01" value="0.41">
+          </div>
+        </form>
+
+        <div class="luna-table-wrap">
+          <table class="luna-table">
+            <thead>
+              <tr>
+                <th scope="col">Cenário</th>
+                <th scope="col">Texto / sessão</th>
+                <th scope="col">Total mensal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Atual · com cache</th>
+                <td id="lunaCurrentCachedPerSession">—</td>
+                <td id="lunaCurrentCachedMonthly">—</td>
+              </tr>
+              <tr class="luna-table__highlight">
+                <th scope="row">GPT-5.6 Luna · com cache</th>
+                <td id="lunaCachedPerSession">—</td>
+                <td id="lunaCachedMonthly">—</td>
+              </tr>
+              <tr>
+                <th scope="row">Atual · sem cache</th>
+                <td id="lunaCurrentUncachedPerSession">—</td>
+                <td id="lunaCurrentUncachedMonthly">—</td>
+              </tr>
+              <tr class="luna-table__highlight">
+                <th scope="row">GPT-5.6 Luna · sem cache</th>
+                <td id="lunaUncachedPerSession">—</td>
+                <td id="lunaUncachedMonthly">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="luna-savings" aria-live="polite">
+          <div><span>Economia mensal com cache</span><strong id="lunaCachedSavings">—</strong></div>
+          <div><span>Economia mensal sem cache</span><strong id="lunaUncachedSavings">—</strong></div>
+        </div>
+        <p class="scale-results__note" id="lunaSourceNote">120.000 tokens são tratados como entrada; tokens de saída e escrita de cache permanecem editáveis.</p>
+      </article>
+
+      <div class="dash-columns dash-columns--evidence" data-dashboard-panel="consolidated" hidden>
+        <article class="dash-panel">
+          <div class="dash-panel__head">
+            <div>
+              <span class="dashboard__section-kicker">Eficiência</span>
+              <h3 class="dash-panel__title">Consumo e composição de custo</h3>
+            </div>
+            <strong class="dash-panel__total" id="dashCostTotal">US$ 0,00</strong>
+          </div>
+          <ul class="cost-legend">
+            <li><span class="cost-dot cost-dot--image" aria-hidden="true"></span>Custo das imagens <strong id="costImage">US$ 0,00</strong></li>
+          </ul>
+          <dl class="efficiency-list">
+            <div><dt>Tokens por look concluído</dt><dd id="dashTokensPerLook">—</dd></div>
+            <div><dt>Tokens de imagem</dt><dd id="dashTokens">0</dd></div>
+            <div><dt>MP de referência</dt><dd id="dashInputMegapixels">0 MP</dd></div>
+            <div><dt>MP de saída</dt><dd id="dashOutputMegapixels">0 MP</dd></div>
+          </dl>
+          <p class="dash-panel__note" id="dashTokensBreak">Custos estimados conforme os preços configurados para a instância.</p>
+        </article>
+
+        <article class="dash-panel">
+          <span class="dashboard__section-kicker">Critérios de decisão</span>
+          <h3 class="dash-panel__title">Protocolo comparativo do piloto</h3>
+          <ul class="decision-list">
+            <li><span>Resultado econômico</span><strong>Custo por jornada e economia mensal</strong></li>
+            <li><span>Qualidade visual</span><strong>Cores, estampas, logotipos, rosto e corpo</strong></li>
+            <li><span>Experiência</span><strong>Sucesso na primeira tentativa e latência P95</strong></li>
+            <li><span>Operação</span><strong>Disponibilidade, rastreabilidade e fallback</strong></li>
+          </ul>
+          <p class="dash-panel__note">A comparação entre provedores deve utilizar as mesmas imagens, peças, prompts e critérios de avaliação.</p>
+        </article>
+      </div>
+
+      <article class="recommendation" data-dashboard-panel="consolidated" hidden>
+        <div>
+          <span class="dashboard__section-kicker">Recomendação</span>
+          <h3>Conduzir um piloto híbrido com fallback controlado</h3>
+          <p>A evolução para produção deve ser condicionada à redução do custo por resultado útil, à equivalência de qualidade e ao atendimento da meta de latência.</p>
+        </div>
+        <span class="recommendation__status">Decisão orientada por evidências</span>
+      </article>
+
+      <article class="dash-panel" data-dashboard-panel="consolidated" hidden>
+        <h3 class="dash-panel__title">Evidências processadas nesta instância</h3>
+        <ul class="recent-list" id="recentList">
+          <li class="recent-empty">Nenhuma geração registrada até o momento.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="metrics-section" aria-labelledby="metricsSectionTitle">
+      <div class="metrics-collapse">
+        <button class="metrics-toggle" id="metricsToggle" type="button"
+                aria-expanded="false" aria-controls="metricsBody">
+          <span class="metrics-toggle__text">
+            <span class="metrics-toggle__title" id="metricsSectionTitle">Saúde da aplicação</span>
+            <span class="metrics-toggle__hint">Métricas da instância atual</span>
+          </span>
+          <svg class="metrics-toggle__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+
+        <div class="metrics-body" id="metricsBody" hidden>
+          <div class="metrics-head">
+            <p class="metrics-head__hint">Dados da instância atual, atualizados automaticamente.</p>
+            <button class="button button--ghost metrics-refresh" id="refreshMetricsBtn" type="button">
+              Atualizar
+            </button>
+          </div>
+
+          <div class="metrics-grid" aria-live="polite" aria-busy="false" id="metricsGrid">
+              <article class="metric-card">
+                <span class="metric-card__label">Tempo médio</span>
+                <strong class="metric-card__value" id="metricAverage">—</strong>
+                <span class="metric-card__detail">por requisição</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-card__label">Latência P95</span>
+                <strong class="metric-card__value" id="metricP95">—</strong>
+                <span class="metric-card__detail">95% abaixo deste valor</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-card__label">Taxa de sucesso</span>
+                <strong class="metric-card__value metric-card__value--success" id="metricSuccess">—</strong>
+                <span class="metric-card__detail" id="metricErrors">Sem dados</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-card__label">Requisições</span>
+                <strong class="metric-card__value" id="metricRequests">—</strong>
+                <span class="metric-card__detail">na janela atual</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-card__label">Looks gerados</span>
+                <strong class="metric-card__value" id="metricImages">—</strong>
+                <span class="metric-card__detail">imagens concluídas</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-card__label">Vídeos</span>
+                <strong class="metric-card__value" id="metricVideos">—</strong>
+                <span class="metric-card__detail" id="metricActiveJobs">Nenhum ativo</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-card__label">Tokens (imagem)</span>
+                <strong class="metric-card__value" id="metricTokens">—</strong>
+                <span class="metric-card__detail" id="metricTokensBreak">entrada / saída</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-card__label">Custo estimado</span>
+                <strong class="metric-card__value" id="metricCost">—</strong>
+                <span class="metric-card__detail">imagem + vídeo</span>
+              </article>
+              <article class="metric-card">
+                <span class="metric-card__label">Custo médio / look</span>
+                <strong class="metric-card__value" id="metricCostPerImage">—</strong>
+                <span class="metric-card__detail">por imagem gerada</span>
+              </article>
+            </div>
+
+            <div class="metrics-summary">
+              <span><span class="health-dot" aria-hidden="true"></span> Instância disponível</span>
+              <span id="metricUptime">Ativa há —</span>
+              <span id="metricUpdated">Aguardando atualização</span>
+            </div>
+
+            <div class="metrics-table-wrap">
+              <table class="metrics-table">
+                <caption>Desempenho por endpoint</caption>
+                <thead>
+                  <tr><th scope="col">Endpoint</th><th scope="col">Chamadas</th><th scope="col">Média</th></tr>
+                </thead>
+                <tbody id="metricsRoutes">
+                  <tr><td colspan="3" class="metrics-empty">Nenhuma requisição registrada.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="metrics-footnote">As métricas ficam em memória e são reiniciadas com a aplicação.</p>
+          </div>
+        </div>
+      </section>
+
+    <section class="metrics-section" aria-labelledby="debugSectionTitle">
+      <div class="metrics-collapse">
+        <button class="metrics-toggle" id="debugToggle" type="button"
+                aria-expanded="false" aria-controls="debugBody">
+          <span class="metrics-toggle__text">
+            <span class="metrics-toggle__title" id="debugSectionTitle">Diagnóstico técnico</span>
+            <span class="metrics-toggle__hint">Falhas, requisições e eventos desta sessão</span>
+          </span>
+          <span class="debug-badge" id="debugBadge" hidden>0</span>
+          <svg class="metrics-toggle__chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+
+        <div class="metrics-body" id="debugBody" hidden>
+          <div class="debug-toolbar">
+            <label class="debug-autoscroll">
+              <input type="checkbox" id="debugAutoscroll" checked>
+              Rolagem automática
+            </label>
+            <div class="debug-toolbar__actions">
+              <button class="button button--ghost" id="debugCopyBtn" type="button">Copiar</button>
+              <button class="button button--ghost" id="debugClearBtn" type="button">Limpar</button>
+            </div>
+          </div>
+          <pre class="debug-log" id="debugLog" tabindex="0" aria-live="polite"><span class="debug-log__empty">Nenhum evento registrado ainda.</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="gallery" aria-labelledby="galleryTitle">
+      <div class="gallery__head">
+        <h2 class="gallery__title" id="galleryTitle">Histórico da sessão</h2>
+        <p class="gallery__hint" id="galleryHint">Os looks gerados nesta sessão aparecem aqui.</p>
+      </div>
+      <ul class="gallery__strip" id="galleryStrip"></ul>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>{{ brand_name }} · GPT Image, FLUX.2 e sora-2 no Microsoft Foundry · v{{ version }}</p>
+  </footer>
+
+  <div class="toasts" id="toasts" aria-live="assertive" aria-atomic="false"></div>
+
+  <script src="/static/js/app.js?v={{ version }}" defer></script>
+</body>
+</html>
