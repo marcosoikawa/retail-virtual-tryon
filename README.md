@@ -7,6 +7,16 @@ Aplicação web de demonstração para varejo: o usuário envia uma **foto de co
 |---|---|---|
 | Foto | `gpt-image-2` | A mesma pessoa vestindo as peças, preservando rosto, tom de pele, proporções, pose e iluminação. |
 
+## Visão da aplicação
+
+### Provador virtual
+
+![Tela do provador virtual com um look gerado pelo GPT Image 2](docs/images/virtual-try-on.png)
+
+### Resultados consolidados
+
+![Painel de resultados e projeção de valor](docs/images/results-dashboard.png)
+
 ---
 
 ## Stack
@@ -112,12 +122,17 @@ Coloque o arquivo em `static/img/` com o nome `logo.svg` (ou `.png`, `.jpg`, `.w
 A aplicação procura nessa ordem e usa o primeiro que existir — **sem alterar código**.
 Sem nenhum arquivo, o header exibe um wordmark textual baseado em `BRAND_NAME`.
 
-Personalize também:
+No arquivo `.env`, altere estas variáveis para personalizar a interface:
+
+- `BRAND_NAME`: define o nome exibido no título, no cabeçalho e no rodapé.
+- `BRAND_ACCENT_COLOR`: define a cor de destaque da interface em hexadecimal (`#rgb` ou `#rrggbb`).
 
 ```dotenv
 BRAND_NAME=Minha Marca
 BRAND_ACCENT_COLOR=#c0392b
 ```
+
+Reinicie a aplicação após alterar o `.env` para aplicar os novos valores.
 
 Detalhes em [static/img/README.md](static/img/README.md).
 
