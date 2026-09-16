@@ -1,4 +1,4 @@
-"""Diagnostico temporario: valida endpoint, escopo do token e rotas de imagem/video."""
+"""Diagnostico temporario: valida endpoint, escopo do token e rotas de imagem."""
 
 from __future__ import annotations
 
@@ -11,9 +11,7 @@ import httpx
 from PIL import Image
 
 RESOURCE = "https://hiro-foundry-resource.services.ai.azure.com"
-ALT_RESOURCE = "https://hiro-foundry-resource.cognitiveservices.azure.com"
 IMAGE_DEPLOYMENT = "gpt-image-2"
-VIDEO_DEPLOYMENT = "sora-2"
 
 
 def token(scope: str) -> str:
@@ -42,7 +40,7 @@ def show(label: str, response: httpx.Response) -> None:
 
 def main() -> None:
     scopes = {
-        "cognitiveservices": "https://cognitiveservices.azure.com",
+        "foundry": "https://ai.azure.com",
     }
     tokens = {name: token(scope) for name, scope in scopes.items()}
 
@@ -56,15 +54,11 @@ def main() -> None:
             headers = {"Authorization": f"Bearer {tok}"}
             print(f"-- escopo {name}")
             show(
-                "GET /openai/v1/videos",
-                client.get(f"{base}/openai/v1/videos", params={"api-version": "preview"}, headers=headers),
-            )
-            show(
                 "GET /openai/models (v1)",
                 client.get(f"{base}/openai/v1/models", params={"api-version": "preview"}, headers=headers),
             )
 
-    tok = tokens.get("cognitiveservices") or tokens.get("ai.azure.com")
+    tok = tokens.get("foundry")
     headers = {"Authorization": f"Bearer {tok}"}
     person = png((180, 150, 130), (512, 768))
     garment = png((30, 60, 200), (512, 512))
@@ -100,27 +94,6 @@ def main() -> None:
         ],
     )
     print(f"  status {r.status_code} :: {r.text[:400]}")
-
-    print("\n=== VIDEOS CREATE (v1: /openai/v1/videos) ===")
-    ref = png((120, 120, 120), (720, 1280))
-    r = client.post(
-        f"{RESOURCE}/openai/v1/videos",
-        params={"api-version": "preview"},
-        headers=headers,
-        data={
-            "model": VIDEO_DEPLOYMENT,
-            "prompt": "A slow camera push in on a grey studio wall.",
-            "seconds": "4",
-            "size": "720x1280",
-        },
-        files={"input_reference": ("ref.png", ref, "image/png")},
-    )
-    print(f"  status {r.status_code} :: {r.text[:500]}")
-    if r.status_code < 300:
-        video_id = r.json().get("id")
-        print("  cancelando job de teste:", video_id)
-        d = client.delete(f"{RESOURCE}/openai/v1/videos/{video_id}", params={"api-version": "preview"}, headers=headers)
-        print(f"  delete -> {d.status_code}")
 
     client.close()
 

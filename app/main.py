@@ -10,20 +10,16 @@ import time
 import uuid
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import AsyncIterator, Iterator, Literal
+from typing import AsyncIterator
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
 
 from . import __version__
 from .config import (
-    ALLOWED_VIDEO_DURATIONS,
-    ALLOWED_VIDEO_SIZES,
     IMAGE_MODEL_CHOICES,
     ConfigurationError,
     Settings,
@@ -32,27 +28,22 @@ from .config import (
     get_settings,
 )
 from .image_utils import (
-    UUID_MP4,
+    GARMENT_MAX_SIZE,
+    PERSON_MAX_SIZE,
     UUID_IMAGE,
-    UUID_RE,
     ImageValidationError,
     NormalizedImage,
     normalize_upload,
-    orientation_to_size,
     safe_output_path,
     suggest_orientation,
 )
-from .jobs import CapacityError, JobRegistry
 from .tryon_service import ContentPolicyError, TryOnError, TryOnService
-from .video_service import VideoService
 
 logger = logging.getLogger(__name__)
 
 BACKGROUND_CHOICES = ("studio", "urban", "original")
 STYLE_CHOICES = ("ecommerce", "lookbook", "casual")
-CAMERA_CHOICES = ("runway", "spin", "fabric", "still")
 MAX_NOTES_LENGTH = 600
-_RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 
 class MetricsStore:
@@ -63,7 +54,7 @@ class MetricsStore:
         self._settings = settings
         self._samples: deque[tuple[str, str, int, float]] = deque(maxlen=max_samples)
         self._lock = asyncio.Lock()
-        # Contadores de geração (imagem e vídeo) para o dashboard e o painel de custos.
+        # Contadores de geração de imagem para o dashboard e o painel de custos.
         self._image_count = 0
         self._image_tokens_in = 0
         self._image_text_tokens_in = 0
@@ -74,9 +65,6 @@ class MetricsStore:
         self._image_cost = 0.0
         self._priced_image_count = 0
         self._unpriced_image_count = 0
-        self._video_count = 0
-        self._video_seconds = 0
-        self._video_cost = 0.0
         self._recent: deque[dict[str, object]] = deque(maxlen=12)
         self._executions: deque[dict[str, object]] = deque(maxlen=max_samples)
 
@@ -138,27 +126,6 @@ class MetricsStore:
             self._recent.appendleft(execution)
             self._executions.appendleft(execution)
 
-    async def record_video_generation(self, seconds: int, image_id: str) -> None:
-        cost = seconds * self._settings.video_price_per_second
-        async with self._lock:
-            self._video_count += 1
-            self._video_seconds += seconds
-            self._video_cost += cost
-            execution = {
-                "execution_id": str(uuid.uuid4()),
-                "type": "video",
-                "id": image_id,
-                "model": self._settings.video_model_deployment,
-                "seconds": seconds,
-                "tokens": 0,
-                "cost": round(cost, 6),
-                "cost_configured": True,
-                "elapsed_ms": seconds * 1000,
-                "at": int(time.time()),
-            }
-            self._recent.appendleft(execution)
-            self._executions.appendleft(execution)
-
     async def snapshot(self) -> dict[str, object]:
         async with self._lock:
             samples = list(self._samples)
@@ -172,9 +139,6 @@ class MetricsStore:
             image_cost = self._image_cost
             priced_image_count = self._priced_image_count
             unpriced_image_count = self._unpriced_image_count
-            video_count = self._video_count
-            video_seconds = self._video_seconds
-            video_cost = self._video_cost
             recent = list(self._recent)
             executions = list(self._executions)
 
@@ -206,7 +170,6 @@ class MetricsStore:
             )
 
         total_tokens = tokens_in + tokens_out
-        total_cost = image_cost + video_cost
         return {
             "uptime_seconds": int(time.time() - self.started_at),
             "requests": total,
@@ -215,7 +178,6 @@ class MetricsStore:
             "average_response_ms": round(sum(durations) / total, 1) if total else 0.0,
             "p95_response_ms": round(_percentile(durations, 0.95), 1),
             "image_generations": image_count,
-            "video_requests": video_count,
             "image_average_ms": round(image_ms_total / image_count) if image_count else 0,
             "image_p95_ms": round(_percentile(image_durations, 0.95), 1),
             "tokens": {
@@ -228,17 +190,14 @@ class MetricsStore:
             },
             "cost": {
                 "image": round(image_cost, 6),
-                "video": round(video_cost, 6),
-                "total": round(total_cost, 6),
+                "total": round(image_cost, 6),
                 "per_image": (
                     round(image_cost / priced_image_count, 6) if priced_image_count else 0.0
                 ),
-                "per_video": round(video_cost / video_count, 6) if video_count else 0.0,
                 "complete": unpriced_image_count == 0,
                 "unpriced_images": unpriced_image_count,
                 "currency": "USD",
             },
-            "video_seconds": video_seconds,
             "recent": recent,
             "executions": executions,
             "routes": sorted(route_stats, key=lambda item: int(item["requests"]), reverse=True),
@@ -258,12 +217,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     settings = get_settings()
     settings.outputs_dir.mkdir(parents=True, exist_ok=True)
-    settings.videos_dir.mkdir(parents=True, exist_ok=True)
 
     app.state.settings = settings
     app.state.tryon_service = TryOnService(settings)
-    app.state.video_service = VideoService(settings)
-    app.state.jobs = JobRegistry(settings.max_concurrent_video_jobs)
     app.state.rate_limiter = RateLimiter()
     app.state.metrics = MetricsStore(settings)
 
@@ -274,9 +230,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        await app.state.jobs.cancel_all()
         await app.state.tryon_service.close()
-        await app.state.video_service.close()
         await close_credential()
 
 
@@ -358,14 +312,6 @@ def get_tryon_service(request: Request) -> TryOnService:
     return request.app.state.tryon_service
 
 
-def get_video_service(request: Request) -> VideoService:
-    return request.app.state.video_service
-
-
-def get_registry(request: Request) -> JobRegistry:
-    return request.app.state.jobs
-
-
 def client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
@@ -396,8 +342,6 @@ async def index(request: Request, settings: Settings = Depends(get_app_settings)
             "logo_url": settings.logo_url(),
             "max_garments": settings.max_garments,
             "max_upload_mb": settings.max_upload_mb,
-            "durations": ALLOWED_VIDEO_DURATIONS,
-            "default_duration": settings.video_default_duration,
             "version": __version__,
         },
     )
@@ -411,8 +355,6 @@ async def index(request: Request, settings: Settings = Depends(get_app_settings)
 @app.get("/api/health")
 async def health(
     settings: Settings = Depends(get_app_settings),
-    video: VideoService = Depends(get_video_service),
-    registry: JobRegistry = Depends(get_registry),
 ) -> dict[str, object]:
     return {
         "status": "ok",
@@ -436,19 +378,12 @@ async def health(
             "output_format": settings.image_output_format,
             "output_compression": settings.image_output_compression,
         },
-        "video": {
-            "configured": video.is_configured,
-            "deployment": settings.video_model_deployment,
-            "active_jobs": await registry.active_count(),
-            "max_concurrent": settings.max_concurrent_video_jobs,
-        },
     }
 
 
 @app.get("/api/metrics")
-async def metrics(request: Request, registry: JobRegistry = Depends(get_registry)) -> dict[str, object]:
+async def metrics(request: Request) -> dict[str, object]:
     snapshot = await request.app.state.metrics.snapshot()
-    snapshot["active_video_jobs"] = await registry.active_count()
     snapshot["generated_at"] = int(time.time())
     return snapshot
 
@@ -484,11 +419,15 @@ async def create_tryon(
         raise HTTPException(status_code=400, detail="Modelo de imagem invalido.")
     notes = notes.strip()[:MAX_NOTES_LENGTH]
 
-    person_image = await _read_and_normalize(person, settings.max_upload_bytes, "pessoa")
+    person_image = await _read_and_normalize(
+        person, settings.max_upload_bytes, "pessoa", PERSON_MAX_SIZE
+    )
     garment_images: list[NormalizedImage] = []
     for index, upload in enumerate(garments, start=1):
         garment_images.append(
-            await _read_and_normalize(upload, settings.max_upload_bytes, f"peca-{index}")
+            await _read_and_normalize(
+                upload, settings.max_upload_bytes, f"peca-{index}", GARMENT_MAX_SIZE
+            )
         )
 
     try:
@@ -532,83 +471,6 @@ async def create_tryon(
     )
 
 
-class VideoRequest(BaseModel):
-    image_id: str = Field(min_length=36, max_length=36)
-    camera_motion: Literal["runway", "spin", "fabric", "still"] = "runway"
-    duration: int = 8
-    orientation: Literal["portrait", "landscape"] = "portrait"
-    notes: str = ""
-
-
-@app.post("/api/video", status_code=status.HTTP_202_ACCEPTED)
-async def create_video(
-    request: Request,
-    payload: VideoRequest,
-    settings: Settings = Depends(get_app_settings),
-    video: VideoService = Depends(get_video_service),
-    registry: JobRegistry = Depends(get_registry),
-) -> dict[str, object]:
-    await request.app.state.rate_limiter.check(
-        "video", client_ip(request), settings.rate_limit_video_per_minute
-    )
-
-    if not UUID_RE.match(payload.image_id):
-        raise HTTPException(status_code=400, detail="Identificador de imagem invalido.")
-
-    image_path = next(
-        (
-            candidate
-            for suffix in (".jpg", ".png")
-            if (candidate := settings.outputs_dir / f"{payload.image_id}{suffix}").is_file()
-        ),
-        None,
-    )
-    if image_path is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Gere a foto do look antes de criar o video.",
-        )
-
-    duration = (
-        payload.duration
-        if payload.duration in ALLOWED_VIDEO_DURATIONS
-        else settings.video_default_duration
-    )
-    size = orientation_to_size(payload.orientation, ALLOWED_VIDEO_SIZES)
-    notes = payload.notes.strip()[:MAX_NOTES_LENGTH]
-
-    try:
-        job = await registry.create(payload.image_id, payload.camera_motion, duration, size)
-    except CapacityError as exc:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
-
-    task = asyncio.create_task(
-        video.run_job(job, registry, image_path, notes, request.app.state.metrics)
-    )
-    await registry.attach_task(job.id, task)
-    return job.to_dict()
-
-
-@app.get("/api/video/{job_id}")
-async def get_video_job(job_id: str, registry: JobRegistry = Depends(get_registry)) -> dict[str, object]:
-    if not UUID_RE.match(job_id):
-        raise HTTPException(status_code=400, detail="Identificador de job invalido.")
-    job = await registry.get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job de video nao encontrado.")
-    return job.to_dict()
-
-
-@app.delete("/api/video/{job_id}")
-async def cancel_video_job(job_id: str, registry: JobRegistry = Depends(get_registry)) -> dict[str, object]:
-    if not UUID_RE.match(job_id):
-        raise HTTPException(status_code=400, detail="Identificador de job invalido.")
-    job = await registry.cancel(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job de video nao encontrado.")
-    return job.to_dict()
-
-
 # ---------------------------------------------------------------------------
 # Arquivos gerados
 # ---------------------------------------------------------------------------
@@ -626,76 +488,9 @@ async def serve_output(filename: str, settings: Settings = Depends(get_app_setti
     )
 
 
-@app.get("/videos/{filename}")
-async def serve_video(
-    filename: str, request: Request, settings: Settings = Depends(get_app_settings)
-) -> Response:
-    path = safe_output_path(settings.videos_dir, filename, UUID_MP4)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Video nao encontrado.")
-    return _ranged_response(path, request.headers.get("range"), "video/mp4")
-
-
-def _ranged_response(path: Path, range_header: str | None, media_type: str) -> Response:
-    file_size = path.stat().st_size
-    base_headers = {
-        "Accept-Ranges": "bytes",
-        "Cache-Control": "private, max-age=3600",
-        "Content-Disposition": f'inline; filename="{path.name}"',
-    }
-
-    if not range_header:
-        return StreamingResponse(
-            _iter_file(path, 0, file_size - 1),
-            media_type=media_type,
-            headers={**base_headers, "Content-Length": str(file_size)},
-        )
-
-    match = _RANGE_RE.match(range_header.strip())
-    if not match:
-        return Response(status_code=416, headers={"Content-Range": f"bytes */{file_size}"})
-
-    raw_start, raw_end = match.groups()
-    if raw_start:
-        start = int(raw_start)
-        end = int(raw_end) if raw_end else file_size - 1
-    else:
-        if not raw_end:
-            return Response(status_code=416, headers={"Content-Range": f"bytes */{file_size}"})
-        start = max(file_size - int(raw_end), 0)
-        end = file_size - 1
-
-    end = min(end, file_size - 1)
-    if start > end or start >= file_size:
-        return Response(status_code=416, headers={"Content-Range": f"bytes */{file_size}"})
-
-    return StreamingResponse(
-        _iter_file(path, start, end),
-        status_code=206,
-        media_type=media_type,
-        headers={
-            **base_headers,
-            "Content-Range": f"bytes {start}-{end}/{file_size}",
-            "Content-Length": str(end - start + 1),
-        },
-    )
-
-
-def _iter_file(path: Path, start: int, end: int, chunk_size: int = 1 << 16) -> Iterator[bytes]:
-    with path.open("rb") as handle:
-        handle.seek(start)
-        remaining = end - start + 1
-        while remaining > 0:
-            data = handle.read(min(chunk_size, remaining))
-            if not data:
-                break
-            remaining -= len(data)
-            yield data
-
-
 async def _read_and_normalize(
-    upload: UploadFile, max_bytes: int, label: str
+    upload: UploadFile, max_bytes: int, label: str, max_size: tuple[int, int]
 ) -> NormalizedImage:
     raw = await upload.read(max_bytes + 1)
     await upload.close()
-    return await asyncio.to_thread(normalize_upload, raw, max_bytes, label)
+    return await asyncio.to_thread(normalize_upload, raw, max_bytes, label, max_size)

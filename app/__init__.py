@@ -1,4 +1,4 @@
-"""Aplicacao Virtual Try-On com modelos GPT Image, FLUX.2 e Sora no Microsoft Foundry."""
+"""Aplicacao Virtual Try-On com GPT Image 2 no Microsoft Foundry."""
 
 __all__ = ["__version__"]
 

@@ -8,7 +8,7 @@ import io
 from PIL import Image
 
 from app.config import get_settings
-from app.image_utils import normalize_upload
+from app.image_utils import GARMENT_MAX_SIZE, PERSON_MAX_SIZE, normalize_upload
 from app.tryon_service import TryOnService
 
 
@@ -24,11 +24,20 @@ async def main() -> None:
     print("api_version   :", settings.azure_openai_api_version)
     print("deployment    :", settings.image_model_deployment)
     print("uses_api_key  :", settings.uses_api_key)
-    print("token_scope   :", settings.azure_token_scope)
 
     service = TryOnService(settings)
-    person = normalize_upload(png((190, 160, 140), (512, 768)), settings.max_upload_bytes, "pessoa")
-    garment = normalize_upload(png((40, 70, 200), (512, 512)), settings.max_upload_bytes, "peca-1")
+    person = normalize_upload(
+        png((190, 160, 140), (512, 768)),
+        settings.max_upload_bytes,
+        "pessoa",
+        PERSON_MAX_SIZE,
+    )
+    garment = normalize_upload(
+        png((40, 70, 200), (512, 512)),
+        settings.max_upload_bytes,
+        "peca-1",
+        GARMENT_MAX_SIZE,
+    )
 
     try:
         result = await service.generate(person, [garment], "studio", "ecommerce", "")

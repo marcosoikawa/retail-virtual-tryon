@@ -9,9 +9,7 @@ static/img/logo.*
 
 # Artefatos gerados
 outputs/*
-videos/*
 !outputs/.gitkeep
-!videos/.gitkeep
 
 # Python
 __pycache__/

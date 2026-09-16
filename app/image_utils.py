@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 UUID_IMAGE = re.compile(
     r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.(?:jpg|png)$"
 )
-UUID_MP4 = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.mp4$")
 UUID_RE = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$")
 
-MAX_INPUT_SIDE = 1536
+PERSON_MAX_SIZE = (600, 800)
+GARMENT_MAX_SIZE = (200, 232)
 _ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
 
 
@@ -46,7 +46,9 @@ def sniff_mime_type(data: bytes) -> str | None:
     return None
 
 
-def normalize_upload(data: bytes, max_bytes: int, label: str) -> NormalizedImage:
+def normalize_upload(
+    data: bytes, max_bytes: int, label: str, max_size: tuple[int, int]
+) -> NormalizedImage:
     """Valida, remove EXIF, redimensiona e converte o upload para PNG."""
     if not data:
         raise ImageValidationError(f"O arquivo de {label} esta vazio.")
@@ -73,7 +75,7 @@ def normalize_upload(data: bytes, max_bytes: int, label: str) -> NormalizedImage
     except Exception as exc:  # noqa: BLE001 - Pillow lanca varios tipos
         raise ImageValidationError(f"Nao foi possivel ler a imagem de {label}.") from exc
 
-    image = _limit_side(image, MAX_INPUT_SIDE)
+    image.thumbnail(max_size, Image.Resampling.LANCZOS)
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return NormalizedImage(
@@ -83,49 +85,19 @@ def normalize_upload(data: bytes, max_bytes: int, label: str) -> NormalizedImage
         width=image.width,
         height=image.height,
     )
-
-
-def _limit_side(image: Image.Image, max_side: int) -> Image.Image:
-    longest = max(image.width, image.height)
-    if longest <= max_side:
-        return image
-    scale = max_side / longest
-    size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
-    return image.resize(size, Image.LANCZOS)
-
-
 def parse_size(size: str) -> tuple[int, int]:
     width, _, height = size.lower().partition("x")
     return int(width), int(height)
 
 
-def orientation_to_size(orientation: str, allowed: tuple[str, ...]) -> str:
-    size = "1280x720" if orientation == "landscape" else "720x1280"
-    return size if size in allowed else allowed[0]
-
-
 def suggest_orientation(path: Path) -> str:
-    """Orientacao de video que melhor respeita a proporcao da imagem gerada."""
+    """Orientacao que melhor respeita a proporcao da imagem gerada."""
     try:
         with Image.open(path) as image:
             return "landscape" if image.width > image.height else "portrait"
     except Exception:  # noqa: BLE001 - fallback seguro
         logger.warning("Nao foi possivel inferir orientacao de %s", path.name)
         return "portrait"
-
-
-def build_reference_frame(path: Path, size: str) -> bytes:
-    """Recorta/redimensiona a imagem de try-on para o tamanho exato do video."""
-    target_w, target_h = parse_size(size)
-    with Image.open(path) as source:
-        source.load()
-        image = source.convert("RGB")
-    fitted = ImageOps.fit(image, (target_w, target_h), method=Image.LANCZOS, centering=(0.5, 0.35))
-    buffer = io.BytesIO()
-    fitted.save(buffer, format="PNG", optimize=True)
-    return buffer.getvalue()
-
-
 def safe_output_path(directory: Path, filename: str, pattern: re.Pattern[str]) -> Path:
     """Resolve o caminho apenas para nomes UUID validos dentro do diretorio."""
     if not pattern.match(filename):

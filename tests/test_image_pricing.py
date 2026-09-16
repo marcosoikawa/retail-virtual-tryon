@@ -18,6 +18,36 @@ from app.tryon_service import (
     _extract_usage,
     _image_megapixels,
 )
+from app.image_utils import GARMENT_MAX_SIZE, PERSON_MAX_SIZE, normalize_upload
+
+
+class ImageNormalizationTests(TestCase):
+    @staticmethod
+    def _png(width: int, height: int) -> bytes:
+        buffer = io.BytesIO()
+        Image.new("RGB", (width, height)).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def test_reduces_person_image_to_600_by_800(self) -> None:
+        image = normalize_upload(
+            self._png(1_200, 1_600), 10 * 1024 * 1024, "pessoa", PERSON_MAX_SIZE
+        )
+
+        self.assertEqual((image.width, image.height), (600, 800))
+
+    def test_reduces_garment_proportionally_to_200_by_232(self) -> None:
+        image = normalize_upload(
+            self._png(600, 696), 10 * 1024 * 1024, "peca", GARMENT_MAX_SIZE
+        )
+
+        self.assertEqual((image.width, image.height), (200, 232))
+
+    def test_does_not_enlarge_small_image(self) -> None:
+        image = normalize_upload(
+            self._png(120, 140), 10 * 1024 * 1024, "peca", GARMENT_MAX_SIZE
+        )
+
+        self.assertEqual((image.width, image.height), (120, 140))
 
 
 class ImageUsageTests(TestCase):

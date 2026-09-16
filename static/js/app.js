@@ -13,9 +13,8 @@
     "Ajustando dobras, sombras e iluminação…",
     "Finalizando o acabamento da imagem…",
   ];
-  const VIDEO_STAGES = ["uploading", "queued", "rendering", "finalizing"];
   const SIMULATOR_STORAGE_KEY = "vto-scale-assumptions-v2";
-  const TOTAL_MONTHLY_SESSIONS = 75_000_000;
+  const DEFAULT_MONTHLY_AI_SESSIONS = 67_500;
   const LUNA_INPUT_PRICE_PER_1M = 0.20;
   const LUNA_CACHED_INPUT_PRICE_PER_1M = 0.02;
   const LUNA_CACHE_WRITE_PRICE_PER_1M = 0.25;
@@ -109,15 +108,11 @@
     garmentInput: $("garmentInput"),
     garmentGrid: $("garmentGrid"),
     garmentCount: $("garmentCount"),
-    imageModelSelect: $("imageModelSelect"),
     backgroundSelect: $("backgroundSelect"),
     styleSelect: $("styleSelect"),
     notesInput: $("notesInput"),
     generateBtn: $("generateBtn"),
-    tabPhoto: $("tabPhoto"),
-    tabVideo: $("tabVideo"),
     panelPhoto: $("panelPhoto"),
-    panelVideo: $("panelVideo"),
     statusLive: $("statusLive"),
     photoEmpty: $("photoEmpty"),
     photoLoading: $("photoLoading"),
@@ -133,22 +128,6 @@
     downloadBtn: $("downloadBtn"),
     compareBtn: $("compareBtn"),
     regenerateBtn: $("regenerateBtn"),
-    videoLocked: $("videoLocked"),
-    videoBlock: $("videoBlock"),
-    cameraMotion: $("cameraMotion"),
-    durationSelect: $("durationSelect"),
-    orientationSelect: $("orientationSelect"),
-    generateVideoBtn: $("generateVideoBtn"),
-    videoProgress: $("videoProgress"),
-    videoProgressBar: $("videoProgressBar"),
-    videoStageLabel: $("videoStageLabel"),
-    videoElapsed: $("videoElapsed"),
-    videoSteps: $("videoSteps"),
-    cancelVideoBtn: $("cancelVideoBtn"),
-    videoResult: $("videoResult"),
-    videoPlayer: $("videoPlayer"),
-    videoDownloadBtn: $("videoDownloadBtn"),
-    videoRegenerateBtn: $("videoRegenerateBtn"),
     galleryStrip: $("galleryStrip"),
     galleryHint: $("galleryHint"),
     metricsToggle: $("metricsToggle"),
@@ -161,8 +140,6 @@
     metricErrors: $("metricErrors"),
     metricRequests: $("metricRequests"),
     metricImages: $("metricImages"),
-    metricVideos: $("metricVideos"),
-    metricActiveJobs: $("metricActiveJobs"),
     metricUptime: $("metricUptime"),
     metricUpdated: $("metricUpdated"),
     metricsRoutes: $("metricsRoutes"),
@@ -195,7 +172,6 @@
     recentList: $("recentList"),
     scaleControls: $("scaleControls"),
     scaleVolume: $("scaleVolume"),
-    scalePenetration: $("scalePenetration"),
     scaleLooksPerSession: $("scaleLooksPerSession"),
     scaleMonthlyLooks: $("scaleMonthlyLooks"),
     scaleCacheEnabled: $("scaleCacheEnabled"),
@@ -246,10 +222,6 @@
     garments: [],
     current: null,
     gallery: [],
-    cameraMotion: "runway",
-    videoJobId: null,
-    pollTimer: null,
-    elapsedTimer: null,
     messageTimer: null,
     photoProgressTimer: null,
     isGenerating: false,
@@ -534,13 +506,12 @@
     state.isGenerating = true;
     updateGenerateButton();
     el.generateBtn.classList.add("is-busy");
-    switchTab("photo");
     startPhotoLoading();
 
     const form = new FormData();
     form.append("person", state.person, state.person.name);
     state.garments.forEach((item) => form.append("garments", item.file, item.file.name));
-    form.append("image_model", el.imageModelSelect.value);
+    form.append("image_model", "gpt-image-2");
     form.append("background", el.backgroundSelect.value);
     form.append("style", el.styleSelect.value);
     form.append("notes", el.notesInput.value);
@@ -594,14 +565,6 @@
     el.compareBtn.disabled = !item.personUrl;
     if (item.personUrl) el.compareBefore.src = item.personUrl;
 
-    el.orientationSelect.value = item.orientation === "landscape" ? "landscape" : "portrait";
-    el.videoLocked.hidden = true;
-    el.videoBlock.hidden = false;
-    resetVideoUi();
-
-    if (item.videoUrl) {
-      showVideo(item.videoUrl);
-    }
     highlightGallery();
   }
 
@@ -651,21 +614,6 @@
         setComparePosition(current + 4);
       }
     });
-  }
-
-  /* ----------------------------------------------------------------- abas */
-
-  function switchTab(name) {
-    const isPhoto = name === "photo";
-    const isVideo = name === "video";
-    el.tabPhoto.classList.toggle("is-active", isPhoto);
-    el.tabVideo.classList.toggle("is-active", isVideo);
-    el.tabPhoto.setAttribute("aria-selected", String(isPhoto));
-    el.tabVideo.setAttribute("aria-selected", String(isVideo));
-    el.tabPhoto.tabIndex = isPhoto ? 0 : -1;
-    el.tabVideo.tabIndex = isVideo ? 0 : -1;
-    el.panelPhoto.hidden = !isPhoto;
-    el.panelVideo.hidden = !isVideo;
   }
 
   /* ------------------------------------------------------------- métricas */
@@ -767,14 +715,10 @@
       el.metricErrors.textContent = data.errors === 1 ? "1 erro registrado" : `${data.errors} erros registrados`;
       el.metricRequests.textContent = data.requests.toLocaleString("pt-BR");
       el.metricImages.textContent = data.image_generations.toLocaleString("pt-BR");
-      el.metricVideos.textContent = data.video_requests.toLocaleString("pt-BR");
-      el.metricActiveJobs.textContent = data.active_video_jobs
-        ? `${data.active_video_jobs} em processamento`
-        : "Nenhum ativo";
       el.metricUptime.textContent = `Ativa há ${formatUptime(data.uptime_seconds)}`;
       el.metricUpdated.textContent = `Atualizado às ${new Date(data.generated_at * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
       const tokens = data.tokens || { input: 0, output: 0, total: 0 };
-      const cost = data.cost || { total: 0, image: 0, video: 0, per_image: 0 };
+      const cost = data.cost || { total: 0, image: 0, per_image: 0 };
       el.metricTokens.textContent = formatTokens(tokens.total);
       el.metricTokensBreak.textContent = `${formatTokens(tokens.input)} entrada · ${formatTokens(tokens.output)} saída`;
       el.metricCost.textContent = cost.complete === false
@@ -902,7 +846,7 @@
 
   function saveSimulatorAssumptions() {
     const values = {
-      penetration: el.scalePenetration.value,
+      monthlyAiSessions: el.scaleVolume.value,
       looksPerSession: el.scaleLooksPerSession.value,
       cacheEnabled: el.scaleCacheEnabled.checked,
       exchangeRate: el.scaleExchangeRate.value,
@@ -922,7 +866,7 @@
     try {
       const values = JSON.parse(localStorage.getItem(SIMULATOR_STORAGE_KEY) || "null");
       if (!values) return;
-      if (values.penetration !== undefined) el.scalePenetration.value = values.penetration;
+      if (values.monthlyAiSessions !== undefined) el.scaleVolume.value = values.monthlyAiSessions;
       if (values.looksPerSession !== undefined) el.scaleLooksPerSession.value = values.looksPerSession;
       if (typeof values.cacheEnabled === "boolean") el.scaleCacheEnabled.checked = values.cacheEnabled;
       if (values.exchangeRate !== undefined) el.scaleExchangeRate.value = values.exchangeRate;
@@ -941,7 +885,6 @@
 
   function renderScaleProjection(data) {
     const cost = data?.cost || { per_image: 0 };
-    const penetration = simulatorNumber(el.scalePenetration) / 100;
     const looksPerSession = simulatorNumber(el.scaleLooksPerSession);
     const exchangeRate = simulatorNumber(el.scaleExchangeRate);
     const measuredImageCost = cost.complete === false
@@ -951,8 +894,7 @@
     const imageUnitCost = imageOverride || measuredImageCost;
     const baselineUnitCost = simulatorNumber(el.scaleBaselineCost);
 
-    const coveredSessions = TOTAL_MONTHLY_SESSIONS * penetration;
-    el.scaleVolume.value = formatCount(Math.round(coveredSessions));
+    const coveredSessions = simulatorNumber(el.scaleVolume);
     renderLunaProjection(coveredSessions, exchangeRate);
     const requestedLooks = coveredSessions * looksPerSession;
     el.scaleMonthlyLooks.value = formatCount(Math.round(requestedLooks));
@@ -961,9 +903,8 @@
     const hasRequiredCosts = imageUnitCost > 0;
 
     el.scaleCoverage.textContent = formatCount(Math.round(coveredSessions));
-    const currentCoverage = TOTAL_MONTHLY_SESSIONS * 0.015;
     el.scaleAdditionalCoverage.textContent = formatCount(
-      Math.max(0, Math.round(coveredSessions - currentCoverage))
+      Math.max(0, Math.round(coveredSessions - DEFAULT_MONTHLY_AI_SESSIONS))
     );
 
     el.scaleImageCost.placeholder = measuredImageCost > 0
@@ -1080,8 +1021,7 @@
     el.dashTokensBreak.textContent =
       `${formatTokens(tokens.input_text || 0)} tokens de texto, ` +
       `${formatTokens(tokens.input_image || 0)} de imagem na entrada e ` +
-      `${formatTokens(tokens.output_image || tokens.output || 0)} de imagem na saída.` +
-      (cost.complete === false ? ` Tarifa ausente em ${cost.unpriced_images} execução(ões) FLUX.` : "");
+      `${formatTokens(tokens.output_image || tokens.output || 0)} de imagem na saída.`;
     el.dashCostTotal.textContent = cost.complete === false
       ? `${formatUSD(cost.total)} parcial`
       : formatUSD(cost.total);
@@ -1090,9 +1030,7 @@
       : "—";
     el.dashObservedAt.textContent = `Atualizado às ${new Date(data.generated_at * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
     el.dashExecutiveSummary.textContent = data.image_generations
-      ? cost.complete === false
-        ? `${formatCount(data.image_generations)} look(s) concluído(s); ${cost.unpriced_images} execução(ões) FLUX aguardam tarifa para completar o custo consolidado.`
-        : `${formatCount(data.image_generations)} look(s) concluído(s), com custo médio de ${formatBRL(costPerLookBrl)} e tempo médio de ${formatDuration(data.image_average_ms)} por resultado.`
+      ? `${formatCount(data.image_generations)} look(s) concluído(s), com custo médio de ${formatBRL(costPerLookBrl)} e tempo médio de ${formatDuration(data.image_average_ms)} por resultado.`
       : "Gere um look para consolidar os resultados desta demonstração.";
 
     el.costImage.textContent = formatUSD(cost.image);
@@ -1177,9 +1115,7 @@
     items.forEach((item) => {
       const li = document.createElement("li");
       li.className = "recent-item";
-      const detail = item.model?.startsWith("FLUX.2-")
-          ? `${item.model} · ${Number(item.input_megapixels || 0).toFixed(3).replace(".", ",")} MP refs + ${Number(item.output_megapixels || 0).toFixed(3).replace(".", ",")} MP saída`
-        : `${item.model || "GPT Image"} · ${formatTokens(item.tokens)} tokens`;
+      const detail = `${item.model || "GPT Image 2"} · ${formatTokens(item.tokens)} tokens`;
       const time = new Date(item.at * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
       li.innerHTML =
         `<span class="recent-item__kind recent-item__kind--image">Look</span>` +
@@ -1191,161 +1127,10 @@
     });
   }
 
-  /* ---------------------------------------------------------------- vídeo */
-
-  function resetVideoUi() {
-    stopPolling();
-    state.videoJobId = null;
-    el.videoProgress.hidden = true;
-    el.videoResult.hidden = true;
-    el.videoPlayer.removeAttribute("src");
-    el.generateVideoBtn.disabled = false;
-    el.generateVideoBtn.classList.remove("is-busy");
-    el.videoProgressBar.style.width = "0%";
-    updateSteps("uploading");
-  }
-
-  function updateSteps(stage) {
-    const currentIndex = VIDEO_STAGES.indexOf(stage);
-    Array.from(el.videoSteps.children).forEach((li, index) => {
-      li.classList.toggle("is-current", index === currentIndex);
-      li.classList.toggle("is-done", currentIndex >= 0 && index < currentIndex);
-    });
-  }
-
-  function stopPolling() {
-    window.clearTimeout(state.pollTimer);
-    window.clearInterval(state.elapsedTimer);
-    state.pollTimer = null;
-    state.elapsedTimer = null;
-  }
-
-  async function generateVideo() {
-    if (!state.current || state.videoJobId) return;
-
-    el.generateVideoBtn.disabled = true;
-    el.generateVideoBtn.classList.add("is-busy");
-    el.videoResult.hidden = true;
-    el.videoProgress.hidden = false;
-    el.videoProgressBar.style.width = "3%";
-    el.videoStageLabel.textContent = "Enviando";
-    el.videoElapsed.textContent = "00:00";
-    updateSteps("uploading");
-    announce("Gerando o vídeo do look.");
-
-    const startedAt = Date.now();
-    state.elapsedTimer = window.setInterval(() => {
-      el.videoElapsed.textContent = formatClock(Date.now() - startedAt);
-    }, 1000);
-
-    try {
-      const response = await fetch("/api/video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image_id: state.current.imageId,
-          camera_motion: state.cameraMotion,
-          duration: Number(el.durationSelect.value),
-          orientation: el.orientationSelect.value,
-          notes: el.notesInput.value,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(await readError(response, "Não foi possível iniciar o vídeo."));
-      }
-      const job = await response.json();
-      state.videoJobId = job.job_id;
-      pollVideo(2000);
-    } catch (error) {
-      resetVideoUi();
-      toast(error.message, "error");
-      announce("Falha ao iniciar o vídeo.");
-    }
-  }
-
-  function pollVideo(delay) {
-    state.pollTimer = window.setTimeout(async () => {
-      const jobId = state.videoJobId;
-      if (!jobId) return;
-      try {
-        const response = await fetch(`/api/video/${jobId}`);
-        if (!response.ok) {
-          throw new Error(await readError(response, "Falha ao consultar o status do vídeo."));
-        }
-        const job = await response.json();
-        if (job.job_id !== state.videoJobId) return;
-
-        el.videoStageLabel.textContent = job.stage_label || "Processando";
-        el.videoProgressBar.style.width = `${Math.max(3, job.progress)}%`;
-        updateSteps(job.stage);
-
-        if (job.status === "completed" && job.video_url) {
-          stopPolling();
-          state.videoJobId = null;
-          el.videoProgress.hidden = true;
-          el.generateVideoBtn.disabled = false;
-          el.generateVideoBtn.classList.remove("is-busy");
-          showVideo(job.video_url);
-          registerVideoInGallery(job.video_url);
-          toast("Vídeo do look pronto.", "success");
-          announce("Vídeo do look pronto.");
-          refreshDashboard();
-        } else if (job.status === "failed") {
-          stopPolling();
-          resetVideoUi();
-          toast(job.error || "A renderização do vídeo falhou.", "error");
-          announce("Falha na geração do vídeo.");
-        } else if (job.status === "cancelled") {
-          stopPolling();
-          resetVideoUi();
-          announce("Geração de vídeo cancelada.");
-        } else {
-          pollVideo(Math.min(delay * 1.25, 5000));
-        }
-      } catch (error) {
-        stopPolling();
-        resetVideoUi();
-        toast(error.message, "error");
-      }
-    }, delay);
-  }
-
-  function showVideo(url) {
-    el.videoPlayer.src = url;
-    el.videoPlayer.poster = state.current ? state.current.imageUrl : "";
-    el.videoDownloadBtn.href = url;
-    el.videoDownloadBtn.setAttribute("download", `look-${state.current?.imageId || "video"}.mp4`);
-    el.videoResult.hidden = false;
-    if (state.current) state.current.videoUrl = url;
-  }
-
-  async function cancelVideo() {
-    const jobId = state.videoJobId;
-    if (!jobId) return;
-    el.cancelVideoBtn.disabled = true;
-    try {
-      await fetch(`/api/video/${jobId}`, { method: "DELETE" });
-      toast("Geração de vídeo cancelada.", "info", 3500);
-    } catch (_) {
-      toast("Não foi possível confirmar o cancelamento.", "error");
-    } finally {
-      el.cancelVideoBtn.disabled = false;
-      resetVideoUi();
-      announce("Geração de vídeo cancelada.");
-    }
-  }
-
   /* -------------------------------------------------------------- galeria */
 
   function addToGallery(item) {
     state.gallery.unshift(item);
-    renderGallery();
-  }
-
-  function registerVideoInGallery(url) {
-    if (!state.current) return;
-    const entry = state.gallery.find((item) => item.imageId === state.current.imageId);
-    if (entry) entry.videoUrl = url;
     renderGallery();
   }
 
@@ -1368,20 +1153,8 @@
       img.alt = "";
       button.appendChild(img);
 
-      if (item.videoUrl) {
-        const badge = document.createElement("span");
-        badge.className = "gallery__badge";
-        badge.textContent = "VÍDEO";
-        button.appendChild(badge);
-      }
-
       button.addEventListener("click", () => {
-        if (state.videoJobId) {
-          toast("Aguarde ou cancele o vídeo em andamento.", "info", 3500);
-          return;
-        }
         applyResult(item);
-        switchTab("photo");
       });
 
       li.appendChild(button);
@@ -1435,8 +1208,6 @@
     el.generateBtn.addEventListener("click", generateLook);
     el.regenerateBtn.addEventListener("click", generateLook);
 
-    el.tabPhoto.addEventListener("click", () => switchTab("photo"));
-    el.tabVideo.addEventListener("click", () => switchTab("video"));
     el.metricsToggle.addEventListener("click", () => toggleMetrics());
     el.refreshMetricsBtn.addEventListener("click", loadMetrics);
 
@@ -1477,26 +1248,7 @@
     el.navApp.addEventListener("click", () => switchView("app"));
     el.navDashboard.addEventListener("click", () => switchView("dashboard"));
 
-    el.cameraMotion.addEventListener("click", (event) => {
-      const target = event.target.closest(".segmented__item");
-      if (!target) return;
-      state.cameraMotion = target.dataset.value;
-      Array.from(el.cameraMotion.children).forEach((node) => {
-        const active = node === target;
-        node.classList.toggle("is-active", active);
-        node.setAttribute("aria-checked", String(active));
-      });
-    });
-
-    el.generateVideoBtn.addEventListener("click", generateVideo);
-    el.videoRegenerateBtn.addEventListener("click", () => {
-      el.videoResult.hidden = true;
-      generateVideo();
-    });
-    el.cancelVideoBtn.addEventListener("click", cancelVideo);
-
     window.addEventListener("beforeunload", () => {
-      stopPolling();
       stopMetricsRefresh();
     });
     renderGallery();

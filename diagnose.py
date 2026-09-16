@@ -15,10 +15,7 @@ load_dotenv()
 
 RAW = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
 BASE = re.sub(r"/openai(/v1)?/?$", "", RAW.rstrip("/"))
-SCOPES = [
-    "https://cognitiveservices.azure.com/.default",
-    "https://ai.azure.com/.default",
-]
+SCOPES = ["https://ai.azure.com/.default"]
 
 
 async def main() -> None:
@@ -59,14 +56,6 @@ async def main() -> None:
                         print("    ", response.text[:500])
                 except Exception as exc:  # noqa: BLE001
                     print(f"\n--- {label} -> ERRO {type(exc).__name__}: {exc}")
-
-            # Testa o caminho exato usado pela Video API
-            for scope_name, tok in tokens.items():
-                url = f"{BASE}/openai/v1/videos?api-version=preview"
-                response = await client.get(url, headers={"Authorization": f"Bearer {tok}"})
-                print(f"\nGET /openai/v1/videos [{scope_name}] -> {response.status_code}")
-                print("    ", response.text[:400])
-
 
 if __name__ == "__main__":
     asyncio.run(main())

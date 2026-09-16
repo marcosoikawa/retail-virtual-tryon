@@ -15,18 +15,14 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+FOUNDRY_TOKEN_SCOPE = "https://ai.azure.com/.default"
 
 _HEX_COLOR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 _SIZE = re.compile(r"^\d{3,4}x\d{3,4}$")
 
 LOGO_CANDIDATES: tuple[str, ...] = ("logo.svg", "logo.png", "logo.jpg", "logo.webp")
-ALLOWED_VIDEO_DURATIONS: tuple[int, ...] = (4, 8, 12)
-ALLOWED_VIDEO_SIZES: tuple[str, ...] = ("720x1280", "1280x720")
 IMAGE_MODEL_CHOICES: tuple[str, ...] = (
     "gpt-image-2",
-    "gpt-image-1-mini",
-    "FLUX.2-pro",
-    "FLUX.2-flex",
 )
 FLUX_MODEL_PATHS: dict[str, str] = {
     "FLUX.2-pro": "flux-2-pro",
@@ -59,15 +55,12 @@ class Settings(BaseSettings):
     azure_openai_api_version: str = "2025-04-01-preview"
     azure_flux_endpoint: str = ""
     azure_flux_api_version: str = "preview"
-    azure_video_api_version: str = "preview"
     azure_openai_api_key: str = ""
-    azure_token_scope: str = "https://cognitiveservices.azure.com/.default"
 
     image_model_deployment: str = "gpt-image-2"
     image_mini_model_deployment: str = "gpt-image-1-mini"
     flux_2_pro_deployment: str = "FLUX.2-pro"
     flux_2_flex_deployment: str = "FLUX.2-flex"
-    video_model_deployment: str = "sora-2"
 
     gpt_image_2_size: str = "1024x1536"
     gpt_image_1_mini_size: str = "1024x1536"
@@ -77,18 +70,12 @@ class Settings(BaseSettings):
     image_output_compression: int = Field(default=80, ge=0, le=100)
     image_timeout_seconds: int = 180
 
-    video_default_duration: int = 8
-    video_default_resolution: str = "720x1280"
-    video_timeout_seconds: int = 600
-    max_concurrent_video_jobs: int = 2
-
     brand_name: str = "Virtual Try-On"
     brand_accent_color: str = "#eb0a1e"
 
     max_garments: int = Field(default=5, ge=1, le=8)
     max_upload_mb: int = Field(default=10, ge=1, le=50)
     rate_limit_image_per_minute: int = Field(default=6, ge=1)
-    rate_limit_video_per_minute: int = Field(default=2, ge=1)
 
     # Precos globais estimados em USD por 1M tokens (ajuste conforme o contrato Foundry).
     gpt_image_2_input_text_price_per_1m: float = Field(default=5.0, ge=0)
@@ -102,7 +89,6 @@ class Settings(BaseSettings):
     flux_2_pro_ref_mp_price: float = Field(default=0.015, ge=0)
     flux_2_flex_mp_price: float = Field(default=0.05, ge=0)
     flux_2_flex_ref_mp_price: float = Field(default=0.05, ge=0)
-    video_price_per_second: float = Field(default=0.50, ge=0)
 
     def image_deployment(self, model: str) -> str:
         if model == "FLUX.2-flex":
@@ -203,7 +189,6 @@ class Settings(BaseSettings):
         "gpt_image_2_size",
         "gpt_image_1_mini_size",
         "flux_image_size",
-        "video_default_resolution",
     )
     @classmethod
     def _validate_size(cls, value: str) -> str:
@@ -211,13 +196,6 @@ class Settings(BaseSettings):
         if not _SIZE.match(candidate):
             raise ValueError(f"Resolucao invalida: {value!r}. Use o formato LARGURAxALTURA.")
         return candidate
-
-    @field_validator("video_default_duration")
-    @classmethod
-    def _validate_duration(cls, value: int) -> int:
-        if value not in ALLOWED_VIDEO_DURATIONS:
-            raise ValueError(f"Duracao invalida: {value}. Use uma de {ALLOWED_VIDEO_DURATIONS}.")
-        return value
 
     # --- Caminhos ---------------------------------------------------------
     @property
@@ -227,10 +205,6 @@ class Settings(BaseSettings):
     @property
     def outputs_dir(self) -> Path:
         return BASE_DIR / "outputs"
-
-    @property
-    def videos_dir(self) -> Path:
-        return BASE_DIR / "videos"
 
     @property
     def static_dir(self) -> Path:
@@ -256,10 +230,6 @@ class Settings(BaseSettings):
     @property
     def is_foundry_configured(self) -> bool:
         return bool(self.azure_openai_endpoint)
-
-    @property
-    def video_base_url(self) -> str:
-        return f"{self.azure_openai_endpoint}/openai/v1/videos"
 
     def logo_url(self) -> str | None:
         """Primeiro logo encontrado em static/img, na ordem de preferencia."""
@@ -311,7 +281,6 @@ def _get_credential():
 
 async def get_bearer_token() -> str:
     """Token do Entra ID com cache em memoria e renovacao antecipada."""
-    settings = get_settings()
     global _cached_token, _cached_expiry
 
     if _cached_token and _cached_expiry - time.time() > 120:
@@ -321,7 +290,7 @@ async def get_bearer_token() -> str:
         if _cached_token and _cached_expiry - time.time() > 120:
             return _cached_token
         try:
-            token = await _get_credential().get_token(settings.azure_token_scope)
+            token = await _get_credential().get_token(FOUNDRY_TOKEN_SCOPE)
         except Exception as exc:  # noqa: BLE001 - erro de credencial vira erro de config
             raise ConfigurationError(
                 "Falha ao obter token do Entra ID. Execute 'az login' ou defina "
@@ -340,7 +309,7 @@ def get_async_token_provider() -> Callable[[], Awaitable[str]] | None:
 
 
 async def get_auth_headers() -> dict[str, str]:
-    """Cabecalhos de autenticacao para chamadas REST diretas (Video API)."""
+    """Cabecalhos de autenticacao para chamadas REST do Microsoft Foundry."""
     settings = get_settings()
     if settings.uses_api_key:
         return {"api-key": settings.azure_openai_api_key.strip()}
